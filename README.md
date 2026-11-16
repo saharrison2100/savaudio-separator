@@ -47,3 +47,14 @@ export KEYSTORE_FILE=/path/release.keystore KEYSTORE_PASSWORD=... KEYSTORE_ALIAS
 ## CI
 
 `ci/github-workflows/release.yml` runs lint, unit tests, signs the APK and publishes a GitHub Release on every `v*` tag. Move it to `.github/workflows/release.yml` to switch it on, and add the secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEYSTORE_ALIAS`, `KEY_ALIAS_PASSWORD`.
+
+## Release signing (read this before shipping an update)
+
+Every release must be signed with the same key as v1.0.0, otherwise Android treats the update as a different app and users have to uninstall first.
+
+- The key is stored as GitHub Actions secrets on this repo (Settings, Secrets and variables, Actions): `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEYSTORE_ALIAS`, `KEY_ALIAS_PASSWORD`.
+- Key alias: `savaudio`. Certificate SHA-256: `58:9A:2E:A5:E0:45:07:92:70:E1:6D:EC:A0:04:16:96:5E:DC:B0:A6:2E:1D:47:04:EB:A9:98:34:55:5F:65:4B`.
+- GitHub secrets are write-only. They cannot be downloaded or viewed by anyone; only a workflow running in this repo can use them.
+- To build a signed release, move `ci/github-workflows/release.yml` to `.github/workflows/release.yml` and push a tag such as `v1.0.1`. The workflow decodes the keystore from the secrets, signs the APK and publishes the release.
+- `app/build.gradle.kts` reads the signing values from the environment variables `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEYSTORE_ALIAS` and `KEY_ALIAS_PASSWORD`.
+- Check a built APK against the fingerprint above with `apksigner verify --print-certs`.

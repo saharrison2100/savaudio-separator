@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -34,6 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,10 +63,13 @@ import androidx.core.graphics.drawable.toBitmap
 import com.savaudio.core.OutputDevice
 import com.savaudio.core.RoutePlanner
 import com.savaudio.core.RouteRule
+import com.savaudio.core.SeparationSettings
 import com.savaudio.service.AudioRouterService
 import com.savaudio.service.DeviceMonitor
 import com.savaudio.service.RouterState
+import com.savaudio.service.RouterSettings
 import com.savaudio.service.RuleRepository
+import com.savaudio.service.VolumeControl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -72,6 +78,8 @@ data class AppEntry(val packageName: String, val label: String, val icon: ImageB
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Puts volumes back if routing was killed before it could clean up.
+        if (!RouterState.status.value.running) VolumeControl.restore(this)
         setContent {
             MaterialTheme(colorScheme = SavColors) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -126,6 +134,13 @@ fun SeparatorScreen() {
     val rules by repository.rules.collectAsState()
     val devices by monitor.devices.collectAsState()
     val status by RouterState.status.collectAsState()
+    val settingsStore = remember { RouterSettings.get(context) }
+    val settings by settingsStore.state.collectAsState()
+    // Volume keys inside this app control the routed sound when it has its own volume.
+    LaunchedEffect(settings.separateVolume) {
+        (context as? Activity)?.volumeControlStream =
+            if (settings.separateVolume) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
+    }
 
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
     var query by remember { mutableStateOf("") }
@@ -201,13 +216,21 @@ fun SeparatorScreen() {
                     notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text(
                         "How it works: the routed app's sound is captured and replayed on the output you pick. " +
-                            "Android still plays the original on the default output, so lower the media volume there " +
-                            "if you hear it twice. Calls and apps that block capture cannot be routed.",
+                            "Android still plays the original on the default output. Use Sound separation below to " +
+                            "silence the originals. Calls and apps that block capture cannot be routed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+        }
+        item {
+            SeparationCard(
+                settings = settings,
+                running = status.running,
+                onChange = { settingsStore.update(it) },
+                onLevel = { VolumeControl.setRoutedLevel(context, it) },
+            )
         }
         item {
             OutlinedTextField(
@@ -245,6 +268,69 @@ fun SeparatorScreen() {
             },
             onDismiss = { picking = null },
         )
+    }
+}
+
+@Composable
+private fun SeparationCard(
+    settings: SeparationSettings,
+    running: Boolean,
+    onChange: (SeparationSettings) -> Unit,
+    onLevel: (Float) -> Unit,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Sound separation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            SettingRow(
+                title = "Separate volume for routed sound",
+                detail = "Routed sound uses the alarm volume, so the media volume only changes the originals.",
+                checked = settings.separateVolume,
+                enabled = !running,
+                onChange = { onChange(settings.copy(separateVolume = it)) },
+            )
+            SettingRow(
+                title = "Mute originals while routing",
+                detail = "Media volume goes to zero while routing and comes back when you stop. " +
+                    "Apps without a route go silent too.",
+                checked = settings.shouldMuteOriginals,
+                enabled = !running && settings.separateVolume,
+                onChange = { onChange(settings.copy(muteOriginals = it)) },
+            )
+            if (settings.separateVolume) {
+                Text("Routed sound volume", style = MaterialTheme.typography.bodyMedium)
+                Slider(value = settings.routedLevel, onValueChange = onLevel)
+                Text(
+                    "Your alarm volume is put back when routing stops.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (running) {
+                Text(
+                    "Stop routing to change the switches.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
     }
 }
 

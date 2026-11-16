@@ -38,6 +38,7 @@ class AudioRouterService : Service() {
     private lateinit var rules: RuleRepository
     private var projection: MediaProjection? = null
     private var planJob: Job? = null
+    private var routedUsage = android.media.AudioAttributes.USAGE_MEDIA
     private val sessions = LinkedHashMap<String, RouteSession>()
     private val sessionDeviceNames = HashMap<String, String>()
 
@@ -77,6 +78,8 @@ class AudioRouterService : Service() {
         }
         granted.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
         projection = granted
+        routedUsage = VolumeControl.usage(RouterSettings.get(this).state.value)
+        VolumeControl.applyOnStart(this)
         monitor.start()
         planJob = scope.launch {
             combine(rules.rules, monitor.devices) { r, d -> r to d }.collect { (r, d) -> reconcile(r, d) }
@@ -101,7 +104,7 @@ class AudioRouterService : Service() {
             try {
                 val uid = packageManager.getApplicationInfo(pkg, 0).uid
                 val info = monitor.find(device.id) ?: throw IllegalStateException("Output is no longer connected")
-                val session = RouteSession(pkg, uid, projection, device.id, info)
+                val session = RouteSession(pkg, uid, projection, device.id, info, routedUsage)
                 session.start()
                 sessions[pkg] = session
                 sessionDeviceNames[pkg] = device.displayName
@@ -160,6 +163,7 @@ class AudioRouterService : Service() {
             try { it.stop() } catch (_: Exception) {}
         }
         projection = null
+        VolumeControl.restore(this)
         RouterState.set(RouterStatus())
         super.onDestroy()
     }

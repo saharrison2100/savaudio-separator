@@ -21,6 +21,7 @@ internal class RouteSession(
     projection: MediaProjection,
     val deviceId: Int,
     device: AudioDeviceInfo,
+    usage: Int,
 ) {
     private val record: AudioRecord
     private val track: AudioTrack
@@ -60,7 +61,7 @@ internal class RouteSession(
         track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(usage)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )

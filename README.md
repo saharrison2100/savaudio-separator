@@ -21,7 +21,7 @@ Nothing is recorded, stored or sent anywhere. The app has no internet permission
 - Apps that block capture (many DRM video and some music apps) and phone calls cannot be routed.
 - Expect a small delay on the routed output, so it suits music and podcasts better than video.
 - Routing and replay add no mixing: one app, one output.
-- v1.0.0 has been compiled, linted, unit tested and signed. It has not yet been run on a physical phone, so treat the first install as a test.
+- v1.0.1 has been compiled, linted, unit tested (14 tests) and signed with the same key as v1.0.0. It has not yet been run on a physical phone, so treat the first install as a test.
 
 ## Project layout
 
@@ -47,6 +47,16 @@ export KEYSTORE_FILE=/path/release.keystore KEYSTORE_PASSWORD=... KEYSTORE_ALIAS
 ## CI
 
 `ci/github-workflows/release.yml` runs lint, unit tests, signs the APK and publishes a GitHub Release on every `v*` tag. Move it to `.github/workflows/release.yml` to switch it on, and add the secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEYSTORE_ALIAS`, `KEY_ALIAS_PASSWORD`.
+
+## Sound separation (v1.0.1)
+
+Android keeps playing a routed app's original sound on the default output. To hear only the routed copy:
+
+- **Separate volume for routed sound** (on by default): routed copies play with alarm usage, so they follow the alarm volume and the media volume only affects the originals. While routing, the alarm volume is set from the in-app slider and put back when routing stops.
+- **Mute originals while routing** (off by default): sets the media volume to zero while routing and restores it on stop. Apps that have no route go silent too, so give every app you want to hear a route.
+- Code: `core/.../Separation.kt` (settings and volume maths), `service/.../VolumeControl.kt` (save, apply, restore), `service/.../RouterSettings.kt` (persistence).
+
+Unverified on hardware: whether a given phone still delivers captured audio at media volume zero, and whether it plays alarm-usage audio on the pinned Bluetooth or wired device. Media volume is per output on Android, so the mute applies to the output that is the default when routing starts. An alarm that rings during routing plays at the routed volume.
 
 ## Release signing (read this before shipping an update)
 
